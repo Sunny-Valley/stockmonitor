@@ -1,150 +1,121 @@
 import os
-import sys
-import json
-import psycopg2
-import pytz
-import numpy as np
 import pandas as pd
 import alpaca_trade_api as tradeapi
-from datetime import datetime, time, timedelta
-from xgboost import XGBRegressor
+from alpaca_trade_api.rest import REST, TimeFrame  # <--- 修正点1：显式引入 TimeFrame
+from datetime import datetime, timedelta
+import psycopg2
+from urllib.parse import urlparse
 
 # --- 配置部分 ---
-STOCKS = ['NVDA', 'TSLA', 'AAPL', 'AMD', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NFLX', 'COIN']
+# 从环境变量获取 API Key (在 GitHub Secrets 中设置)
+API_KEY = os.getenv("ALPACA_API_KEY")
+API_SECRET = os.getenv("ALPACA_API_SECRET")
+BASE_URL = "https://paper-api.alpaca.markets"  # 或者 https://api.alpaca.markets
 
-DB_URL = os.environ.get("POSTGRES_URL")
-API_KEY = os.environ.get("ALPACA_KEY")
-API_SECRET = os.environ.get("ALPACA_SECRET")
-BASE_URL = "https://paper-api.alpaca.markets"
+# 数据库连接串
+DB_URL = os.getenv("POSTGRES_URL")
 
-# --- 0. 手写技术指标计算函数 (替代 pandas_ta) ---
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+# 要抓取的股票列表 (根据你的日志补充)
+SYMBOLS = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "GOOGL", "AMZN", "META", "NFLX", "COIN"]
 
-def calculate_macd(series, fast=12, slow=26, signal=9):
-    exp1 = series.ewm(span=fast, adjust=False).mean()
-    exp2 = series.ewm(span=slow, adjust=False).mean()
-    macd = exp1 - exp2
-    signal_line = macd.ewm(span=signal, adjust=False).mean()
-    return macd, signal_line
+def get_db_connection():
+    """解析连接串并连接数据库"""
+    if not DB_URL:
+        raise ValueError("Database URL is not set in environment variables")
+    
+    # 适配 Vercel Postgres (Neon)
+    return psycopg2.connect(DB_URL)
 
-def calculate_bbands(series, length=20, std=2):
-    sma = series.rolling(window=length).mean()
-    rstd = series.rolling(window=length).std()
-    upper = sma + (rstd * std)
-    lower = sma - (rstd * std)
-    return upper, lower
-
-# --- 1. 市场状态检查 ---
-def get_market_status():
-    tz = pytz.timezone('US/Eastern')
-    now = datetime.now(tz)
-    if now.weekday() >= 5:
-        return False, "Weekend"
-    market_start = time(9, 30)
-    market_end = time(16, 0)
-    if market_start <= now.time() <= market_end:
-        return True, "Market Open"
-    return False, "Market Closed"
-
-# --- 2. 检查数据库 ---
-def needs_backfill(symbol, is_market_open):
-    if is_market_open: return True
-    try:
-        conn = psycopg2.connect(DB_URL)
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM stock_analysis WHERE symbol = %s AND updated_at > NOW() - INTERVAL '24 hours' LIMIT 1", (symbol,))
-        exists = cur.fetchone()
-        conn.close()
-        return not exists
-    except:
-        return True
-
-# --- 3. 核心分析逻辑 ---
-def analyze_stock(symbol):
-    try:
-        api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL, api_version='v2')
-        # 获取 15分钟 K线
-        barset = api.get_bars(symbol, tradeapi.REST.TimeFrame.Minute * 15, limit=200, adjustment='raw').df
-        if barset.empty: return None
-
-        df = barset.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
-        
-        # --- 使用手写函数计算指标 ---
-        df['RSI_14'] = calculate_rsi(df['Close'])
-        df['MACD'], df['MACD_SIGNAL'] = calculate_macd(df['Close'])
-        df['BB_UPPER'], df['BB_LOWER'] = calculate_bbands(df['Close'])
-        
-        df = df.dropna()
-        if len(df) < 50: return None
-
-        # 准备数据
-        feature_cols = ['RSI_14', 'MACD', 'Close']
-        X = df[feature_cols]
-        y = df['Close'].shift(-1)
-
-        X_train = X.iloc[:-1].tail(50)
-        y_train = y.iloc[:-1].tail(50)
-        
-        model = XGBRegressor(n_estimators=20, max_depth=3)
-        model.fit(X_train, y_train)
-        
-        current_features = X.iloc[-1].to_frame().T
-        predicted_price = model.predict(current_features)[0]
-        current_price = df['Close'].iloc[-1]
-        
-        threshold = current_price * 0.002
-        signal = "HOLD"
-        if predicted_price > current_price + threshold:
-            signal = "BUY"
-        elif predicted_price < current_price - threshold:
-            signal = "SELL"
-
-        return {
-            "symbol": symbol,
-            "price": round(current_price, 2),
-            "predict": round(float(predicted_price), 2),
-            "signal": signal,
-            "rsi": round(df['RSI_14'].iloc[-1], 2)
-        }
-
-    except Exception as e:
-        print(f"Error on {symbol}: {e}")
-        return None
-
-# --- 4. 数据库写入 ---
-def save_to_db(results):
-    if not results: return
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS stock_analysis (
-            id SERIAL PRIMARY KEY,
+def init_db(conn):
+    """确保表存在 (根据你的项目需求调整表结构)"""
+    cursor = conn.cursor()
+    # 创建一个通用的 market_data 表，如果不存在的话
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS market_data (
             symbol VARCHAR(10),
-            price DECIMAL,
-            prediction DECIMAL,
-            signal VARCHAR(10),
-            rsi DECIMAL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            date DATE,
+            open NUMERIC,
+            high NUMERIC,
+            low NUMERIC,
+            close NUMERIC,
+            volume BIGINT,
+            PRIMARY KEY (symbol, date)
         );
     """)
-    for r in results:
-        cur.execute("INSERT INTO stock_analysis (symbol, price, prediction, signal, rsi) VALUES (%s, %s, %s, %s, %s)", 
-                   (r['symbol'], r['price'], r['predict'], r['signal'], r['rsi']))
     conn.commit()
+    cursor.close()
+
+def fetch_and_store_data():
+    print("Starting data fetch...")
+    
+    # 初始化 Alpaca API
+    api = REST(API_KEY, API_SECRET, BASE_URL)
+    
+    try:
+        conn = get_db_connection()
+        init_db(conn) # 确保表存在
+        cursor = conn.cursor()
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        return
+
+    # 设定获取过去 30 天的数据
+    end_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+
+    for symbol in SYMBOLS:
+        try:
+            print(f"Fetching data for {symbol}...")
+            
+            # --- 修正点2：使用正确的 TimeFrame 调用方式 ---
+            bars = api.get_bars(
+                symbol,
+                TimeFrame.Day,  # <--- 原来这里写的是 REST.TimeFrame.Day (报错原因)
+                start=start_date,
+                end=end_date,
+                adjustment='raw'
+            ).df
+
+            if bars.empty:
+                print(f"No data found for {symbol}")
+                continue
+
+            # 遍历每一行数据并插入数据库
+            for index, row in bars.iterrows():
+                # index 是 timestamp
+                date_str = index.date()
+                
+                # 插入数据 (UPSERT: 如果存在则更新)
+                cursor.execute("""
+                    INSERT INTO market_data (symbol, date, open, high, low, close, volume)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (symbol, date) 
+                    DO UPDATE SET 
+                        open = EXCLUDED.open,
+                        high = EXCLUDED.high,
+                        low = EXCLUDED.low,
+                        close = EXCLUDED.close,
+                        volume = EXCLUDED.volume;
+                """, (
+                    symbol, 
+                    date_str, 
+                    float(row['open']), 
+                    float(row['high']), 
+                    float(row['low']), 
+                    float(row['close']), 
+                    int(row['volume'])
+                ))
+            
+            conn.commit()
+            print(f"Successfully updated {symbol}")
+
+        except Exception as e:
+            print(f"Error on {symbol}: {e}")
+            conn.rollback() # 出错回滚
+
+    cursor.close()
     conn.close()
-    print(f"Saved {len(results)} records.")
+    print("Data update cycle completed.")
 
 if __name__ == "__main__":
-    is_open, status_msg = get_market_status()
-    print(f"Status: {status_msg}")
-    results = []
-    for stock in STOCKS:
-        if needs_backfill(stock, is_open):
-            res = analyze_stock(stock)
-            if res: results.append(res)
-    save_to_db(results)
+    fetch_and_store_data()
