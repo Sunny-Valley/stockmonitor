@@ -24,9 +24,9 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
         
-      - name: Run AI Script
-        env:
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-          ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
-          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
-        run: python scripts/algo.py
+      - name: Run python scripts
+      env:  # <--- 必须有这一块
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+        POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+      run: python scripts/algo.py
