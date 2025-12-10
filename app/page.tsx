@@ -1,24 +1,23 @@
 import { sql } from "@vercel/postgres";
 
-// 1. 定义数据的结构接口 (修复 TypeScript 报错的关键)
+// 定义数据接口
 interface StockRow {
   id: number;
   symbol: string;
-  price: string;      
+  price: string;
   prediction: string;
   signal: string;
   rsi: string;
   updated_at: Date;
 }
 
-// 强制不缓存，每次刷新获取最新
+// 强制不缓存
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   let rows: StockRow[] = [];
   
   try {
-    // 获取每只股票最新的一条数据
     const result = await sql<StockRow>`
       SELECT DISTINCT ON (symbol) *
       FROM stock_analysis
@@ -26,17 +25,20 @@ export default async function Home() {
     `;
     rows = result.rows;
   } catch (e) {
-    console.log("Database error (likely not initialized yet):", e);
+    console.log("Database empty or error:", e);
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white p-8">
-      <div className="max-w-7xl mx-auto mb-8 text-center">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-600 bg-clip-text text-transparent">
-          美股 AI 量化看板 (15m)
+    <main className="min-h-screen bg-gray-50 text-gray-900 p-8 font-sans">
+      <div className="max-w-7xl mx-auto mb-10 text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl mb-2">
+          美股 <span className="text-blue-600">AI</span> 量化看板
         </h1>
-        <p className="text-slate-400 text-sm mt-2">
-          状态: {rows.length > 0 ? "系统在线" : "等待数据初始化..."}
+        <p className="text-sm font-medium text-gray-500">
+          系统状态: 
+          <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${rows.length > 0 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+            {rows.length > 0 ? "在线运行中" : "等待数据初始化"}
+          </span>
         </p>
       </div>
 
@@ -45,62 +47,68 @@ export default async function Home() {
           const isBuy = row.signal === 'BUY';
           const isSell = row.signal === 'SELL';
           
-          // 判断数据时效性 (如果数据超过30分钟未更新，视为休市或历史数据)
+          // 时效性检查 (30分钟)
           const updateTime = new Date(row.updated_at);
           const now = new Date();
           const isStale = (now.getTime() - updateTime.getTime()) > 30 * 60 * 1000;
 
           return (
-            <div key={row.id} className={`border rounded-xl p-6 shadow-xl relative overflow-hidden transition-all ${
-              isStale ? 'bg-slate-900/50 border-slate-800 opacity-80' : 'bg-slate-900 border-slate-700'
+            <div key={row.id} className={`relative bg-white rounded-xl border p-6 transition-shadow hover:shadow-lg ${
+              isStale ? 'border-gray-200 opacity-75' : 'border-gray-200 shadow-sm'
             }`}>
               
-              {/* 休市/历史数据标记 */}
+              {/* 历史数据标签 */}
               {isStale && (
-                <div className="absolute top-0 right-0 bg-slate-800 text-slate-500 text-[10px] px-2 py-1 rounded-bl font-mono">
-                  HISTORICAL / CLOSED
+                <div className="absolute top-0 right-0 bg-gray-100 text-gray-500 text-[10px] px-2 py-1 rounded-bl border-b border-l border-gray-200">
+                   休市 / 历史数据
                 </div>
               )}
 
-              <div className="flex justify-between items-center mb-4">
-                <h2 className={`text-2xl font-bold ${isStale ? 'text-slate-400' : 'text-white'}`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 tracking-tight">
                   {row.symbol}
                 </h2>
-                <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                  isBuy ? 'bg-green-900 text-green-300' : 
-                  isSell ? 'bg-red-900 text-red-300' : 'bg-slate-700 text-slate-300'
+                <span className={`px-3 py-1 rounded-md text-sm font-bold border ${
+                  isBuy ? 'bg-green-50 text-green-700 border-green-200' : 
+                  isSell ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-50 text-gray-600 border-gray-200'
                 }`}>
                   {row.signal}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-2 gap-8 mb-6">
                 <div>
-                  <p className="text-slate-500 text-sm">收盘价</p>
-                  <p className="text-xl font-mono text-slate-200">${row.price}</p>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">最新收盘</p>
+                  <p className="text-2xl font-mono text-gray-900 mt-1">${row.price}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 text-sm">AI 预测</p>
-                  <p className={`text-xl font-mono ${
-                    Number(row.prediction) > Number(row.price) ? 'text-green-400' : 'text-red-400'
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">AI 预测</p>
+                  <p className={`text-2xl font-mono mt-1 ${
+                    Number(row.prediction) > Number(row.price) ? 'text-green-600' : 'text-red-600'
                   }`}>
                     ${row.prediction}
                   </p>
                 </div>
               </div>
               
-              <div className="text-xs text-slate-500 text-right mt-2 flex justify-between border-t border-slate-800 pt-2">
-                <span>RSI: {row.rsi}</span>
+              <div className="flex justify-between items-center pt-4 border-t border-gray-100 text-xs text-gray-400 font-mono">
+                <span>RSI: <span className={Number(row.rsi) > 70 || Number(row.rsi) < 30 ? 'text-gray-700 font-bold' : ''}>{row.rsi}</span></span>
                 <span>{updateTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
               </div>
             </div>
           )
         })}
         
+        {/* 空状态提示 */}
         {rows.length === 0 && (
-          <div className="col-span-full text-center text-slate-500 py-20 border border-dashed border-slate-800 rounded-xl">
-            <p className="mb-2">暂无数据</p>
-            <p className="text-xs">请前往 GitHub Actions 手动触发一次 "Stock AI Bot" 以进行初始化。</p>
+          <div className="col-span-full bg-white border border-dashed border-gray-300 rounded-xl p-12 text-center">
+            <div className="mx-auto h-12 w-12 text-gray-300 mb-4">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900">暂无分析数据</h3>
+            <p className="mt-1 text-sm text-gray-500">数据库是空的。请检查 GitHub Actions 是否已成功运行。</p>
           </div>
         )}
       </div>
