@@ -1,20 +1,33 @@
 import { sql } from "@vercel/postgres";
 
+// 1. 定义数据的结构接口 (告诉 TypeScript 每一行数据长什么样)
+interface StockRow {
+  id: number;
+  symbol: string;
+  price: string;      // 数据库的 Decimal 类型通常会被转为字符串返回
+  prediction: string;
+  signal: string;
+  rsi: string;
+  updated_at: Date;
+}
+
 // 强制不缓存，每次刷新获取最新
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  // 获取每只股票最新的一条数据
-  let rows = [];
+  // 2. 这里显式告诉 TypeScript: "rows 是一个由 StockRow 组成的数组"
+  let rows: StockRow[] = [];
+  
   try {
-    const result = await sql`
+    // 3. 给 SQL 查询也加上类型提示 (可选，但推荐)
+    const result = await sql<StockRow>`
       SELECT DISTINCT ON (symbol) *
       FROM stock_analysis
       ORDER BY symbol, updated_at DESC;
     `;
     rows = result.rows;
   } catch (e) {
-    console.log("Database not ready yet");
+    console.log("Database not ready yet", e);
   }
 
   return (
