@@ -2,13 +2,15 @@ name: Stock AI Bot
 
 on:
   schedule:
-    # 对应美股时间，每20分钟运行一次
+    # 对应美股时间 (UTC 13:00-21:00)，每20分钟运行一次
     - cron: '*/20 13-21 * * 1-5'
-  workflow_dispatch: # 允许手动运行
+  workflow_dispatch: # 允许手动点击按钮触发
 
 jobs:
   run-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # 防止卡死
+    
     steps:
       - uses: actions/checkout@v3
       
@@ -23,7 +25,6 @@ jobs:
         
       - name: Run AI Script
         env:
-          # 这些变量需要在 GitHub 仓库设置里配置
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
           ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
