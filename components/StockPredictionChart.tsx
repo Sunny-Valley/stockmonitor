@@ -11,17 +11,16 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceDot,
   Label,
   Scatter
 } from 'recharts';
 import { subBusinessDays, format, addMinutes, setHours, setMinutes } from 'date-fns';
 
-// 1. >>> 核心修复：增加坐标有效性检查 <<<
-// 如果 Recharts 传入的 cx 或 cy 无效（比如对应的数据是 null），直接不渲染
+// --- 基础形状组件 ---
 const TriangleDown = (props: any) => {
   const { cx, cy, fill } = props;
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-  
   return (
     <path 
       d={`M${cx - 5} ${cy - 4} L${cx + 5} ${cy - 4} L${cx} ${cy + 5} Z`} 
@@ -34,7 +33,6 @@ const TriangleDown = (props: any) => {
 const TriangleUp = (props: any) => {
   const { cx, cy, fill } = props;
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-
   return (
     <path 
       d={`M${cx - 5} ${cy + 4} L${cx + 5} ${cy + 4} L${cx} ${cy - 5} Z`} 
@@ -44,33 +42,50 @@ const TriangleUp = (props: any) => {
   );
 }
 
-// 2. 自定义图例组件
+// --- >>> 新增：呼吸灯标记组件 (用于高亮最新信号) <<< ---
+const PulsingMarker = (props: any) => {
+  const { cx, cy, fill, action } = props;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+
+  return (
+    <g>
+      {/* 1. 扩散的波纹环 (呼吸动画) */}
+      <circle cx={cx} cy={cy} r="8" fill={fill} opacity="0.5">
+        <animate attributeName="r" from="8" to="20" dur="1.5s" begin="0s" repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.5" to="0" dur="1.5s" begin="0s" repeatCount="indefinite" />
+      </circle>
+      
+      {/* 2. 实心圆点 */}
+      <circle cx={cx} cy={cy} r="5" fill={fill} stroke="#fff" strokeWidth="2" />
+      
+      {/* 3. 文字标签 */}
+      <text x={cx + 15} y={cy + 4} fill={fill} fontSize="12" fontWeight="bold" fontFamily="sans-serif">
+        ← 最新: {action}
+      </text>
+    </g>
+  );
+};
+
+// --- 自定义图例 ---
 const renderLegend = () => {
   return (
     <div className="flex justify-center items-center gap-6 text-xs mt-2 text-gray-600">
-      {/* 买入 */}
       <div className="flex items-center gap-1.5">
         <svg width="10" height="10" viewBox="0 0 12 12" className="overflow-visible">
           <path d="M1 10 L6 2 L11 10 Z" fill="#22c55e" />
         </svg>
         <span>买入信号</span>
       </div>
-      
-      {/* 卖出 */}
       <div className="flex items-center gap-1.5">
         <svg width="10" height="10" viewBox="0 0 12 12" className="overflow-visible">
           <path d="M1 2 L11 2 L6 10 Z" fill="#ef4444" />
         </svg>
         <span>卖出信号</span>
       </div>
-
-      {/* 持有 */}
       <div className="flex items-center gap-1.5">
         <div className="w-2.5 h-2.5 rounded-full bg-gray-300"></div>
         <span>持有</span>
       </div>
-
-      {/* 股价 */}
       <div className="flex items-center gap-1.5">
         <div className="w-4 h-0.5 bg-blue-600"></div>
         <span>股价</span>
@@ -148,12 +163,13 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
     setData(generateBacktestedData());
   }, [currentSymbol]);
 
-  const { maxPrice, minPrice } = useMemo(() => {
-    if (data.length === 0) return { maxPrice: 0, minPrice: 0 };
+  const { maxPrice, minPrice, latestData } = useMemo(() => {
+    if (data.length === 0) return { maxPrice: 0, minPrice: 0, latestData: null };
     const prices = data.map(d => d.price);
     return {
       maxPrice: Math.max(...prices),
-      minPrice: Math.min(...prices)
+      minPrice: Math.min(...prices),
+      latestData: data[data.length - 1] // 获取最后一个数据点
     };
   }, [data]);
 
@@ -193,7 +209,7 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
       
       <div className="flex-1 min-h-[400px]">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 20, right: 0, bottom: 5, left: 0 }}>
+          <ComposedChart data={data} margin={{ top: 20, right: 30, bottom: 5, left: 0 }}>
             <CartesianGrid stroke="#f5f5f5" strokeDasharray="3 3" />
             
             <XAxis 
@@ -219,12 +235,30 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               content={renderLegend}
             />
             
+            {/* 最高/最低价 辅助线 */}
             <ReferenceLine yAxisId="left" y={maxPrice} stroke="#e5e7eb" strokeDasharray="3 3">
               <Label value={`High: ${maxPrice}`} position="insideTopRight" fill="#9ca3af" fontSize={10} offset={10}/>
             </ReferenceLine>
             <ReferenceLine yAxisId="left" y={minPrice} stroke="#e5e7eb" strokeDasharray="3 3">
               <Label value={`Low: ${minPrice}`} position="insideBottomRight" fill="#9ca3af" fontSize={10} offset={10}/>
             </ReferenceLine>
+
+            {/* >>> 新增：最新信号高亮 (呼吸灯) <<< */}
+            {latestData && (
+              <ReferenceDot
+                yAxisId="left"
+                x={latestData.displayTime}
+                y={latestData.price}
+                shape={(props: any) => (
+                  <PulsingMarker 
+                    {...props} 
+                    action={latestData.action}
+                    // 根据动作决定颜色：买入=绿，卖出=红，持有=灰
+                    fill={latestData.action === '买入' ? '#22c55e' : (latestData.action === '卖出' ? '#ef4444' : '#9ca3af')}
+                  />
+                )}
+              />
+            )}
 
             {/* 主股价线 */}
             <Line
