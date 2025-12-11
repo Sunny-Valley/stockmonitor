@@ -47,6 +47,11 @@ def init_db(conn):
 
 def fetch_and_store_data():
     print("Starting data fetch...")
+
+    # --- 新增调试代码 Start ---
+    print(f"DEBUG: API_KEY Type: {type(API_KEY)}")
+    print(f"DEBUG: API_KEY Length: {len(str(API_KEY)) if API_KEY else 'None'}")
+    # --- 新增调试代码 End ---
     
     # 初始化 Alpaca API
     api = REST(API_KEY, API_SECRET, BASE_URL)
