@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ArrowUp, ArrowDown, TrendingUp, Activity, Clock } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
+import { ArrowUp, ArrowDown, Trash2, Plus, Search, Zap, Activity } from 'lucide-react';
+import { addStock, deleteStock } from '../actions'; // 导入我们刚才写的 Server Actions
 
 interface StockData {
   id: number;
@@ -12,43 +13,70 @@ interface StockData {
   prediction: string;
   signal: string;
   rsi: string;
-  history: string; // JSON string
+  history: string;
   updated_at: Date;
 }
 
 export default function Dashboard({ data }: { data: StockData[] }) {
-  // 默认选中第一个股票
   const [selectedSymbol, setSelectedSymbol] = useState<string>(data[0]?.symbol || '');
-  
-  // 找到当前选中的股票数据
-  const selectedStock = useMemo(() => 
-    data.find(item => item.symbol === selectedSymbol) || data[0], 
-  [data, selectedSymbol]);
+  const [newSymbol, setNewSymbol] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
 
-  // 解析历史数据用于画图
-  const chartData = useMemo(() => {
-    if (!selectedStock?.history) return [];
+  // 确保数据存在
+  const safeData = data || [];
+
+  const selectedStock = useMemo(() => 
+    safeData.find(item => item.symbol === selectedSymbol) || safeData[0], 
+  [safeData, selectedSymbol]);
+
+  // 解析图表数据并计算高低点
+  const { chartData, maxPrice, minPrice } = useMemo(() => {
+    if (!selectedStock?.history) return { chartData: [], maxPrice: 0, minPrice: 0 };
     try {
-      return JSON.parse(selectedStock.history);
+      const history = JSON.parse(selectedStock.history);
+      if (!Array.isArray(history) || history.length === 0) return { chartData: [], maxPrice: 0, minPrice: 0 };
+      
+      const prices = history.map((h: any) => h.price);
+      return {
+        chartData: history,
+        maxPrice: Math.max(...prices),
+        minPrice: Math.min(...prices)
+      };
     } catch (e) {
-      return [];
+      return { chartData: [], maxPrice: 0, minPrice: 0 };
     }
   }, [selectedStock]);
 
-  if (!data || data.length === 0) {
-    return <div className="p-10 text-center text-gray-500">暂无数据，请检查后台更新</div>;
-  }
+  const handleAddStock = async () => {
+    if (!newSymbol) return;
+    setIsAdding(true);
+    await addStock(newSymbol);
+    setNewSymbol('');
+    setIsAdding(false);
+  };
+
+  const handleDeleteStock = async (e: React.MouseEvent, symbol: string) => {
+    e.stopPropagation(); // 防止触发选择事件
+    if (confirm(`确定要删除 ${symbol} 吗?`)) {
+      await deleteStock(symbol);
+      if (selectedSymbol === symbol) setSelectedSymbol(safeData[0]?.symbol || '');
+    }
+  };
 
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-100px)] gap-6 p-6 max-w-[1600px] mx-auto">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] bg-gray-50/50 p-4 gap-4 max-w-[1800px] mx-auto font-sans">
       
-      {/* --- 左侧：股票列表 --- */}
-      <div className="w-full md:w-1/3 lg:w-1/4 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-gray-100 bg-gray-50">
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">监控列表 ({data.length})</h2>
+      {/* --- 左侧：紧凑型股票池 --- */}
+      <div className="w-full md:w-64 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {/* 头部 */}
+        <div className="p-3 border-b border-gray-100 bg-gray-50/80 backdrop-blur flex justify-between items-center">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Stock Pool</span>
+          <span className="text-xs bg-gray-200 text-gray-600 px-1.5 rounded-md">{safeData.length}</span>
         </div>
-        <div className="overflow-y-auto flex-1 p-2 space-y-2">
-          {data.map((stock) => {
+
+        {/* 列表区域 */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {safeData.map((stock) => {
             const change = Number(stock.change_percent);
             const isUp = change >= 0;
             const isSelected = stock.symbol === selectedSymbol;
@@ -57,120 +85,160 @@ export default function Dashboard({ data }: { data: StockData[] }) {
               <div 
                 key={stock.id}
                 onClick={() => setSelectedSymbol(stock.symbol)}
-                className={`p-4 rounded-xl cursor-pointer transition-all duration-200 flex justify-between items-center group
-                  ${isSelected ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-200 shadow-sm' : 'hover:bg-gray-50 border border-transparent'}
+                className={`group relative flex items-center justify-between px-4 py-2.5 border-b border-gray-50 cursor-pointer transition-all hover:bg-gray-50
+                  ${isSelected ? 'bg-blue-50/60 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}
                 `}
               >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className={`font-bold text-lg ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>{stock.symbol}</span>
-                    {stock.signal === 'BUY' && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">BUY</span>}
-                    {stock.signal === 'SELL' && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">SELL</span>}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">RSI: {stock.rsi}</div>
+                {/* 股票基本信息 */}
+                <div className="flex flex-col">
+                  <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                    {stock.symbol}
+                  </span>
+                  <span className={`text-[10px] flex items-center ${isUp ? 'text-green-600' : 'text-red-500'}`}>
+                    {isUp ? '+' : ''}{change}%
+                  </span>
                 </div>
+
+                {/* 价格与删除按钮 */}
                 <div className="text-right">
-                  <div className="font-mono font-medium text-gray-900">${stock.price}</div>
-                  <div className={`text-xs font-bold flex items-center justify-end gap-1 ${isUp ? 'text-green-600' : 'text-red-600'}`}>
-                    {isUp ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
-                    {change}%
-                  </div>
+                  <div className="text-sm font-mono font-medium text-gray-900">${stock.price}</div>
+                  
+                  {/* 悬停显示的删除按钮 */}
+                  <button 
+                    onClick={(e) => handleDeleteStock(e, stock.symbol)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete Stock"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
+
+        {/* 底部：添加功能 */}
+        <div className="p-3 border-t border-gray-100 bg-white">
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              value={newSymbol}
+              onChange={(e) => setNewSymbol(e.target.value)}
+              placeholder="Add Symbol..." 
+              className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 uppercase"
+              onKeyDown={(e) => e.key === 'Enter' && handleAddStock()}
+            />
+            <button 
+              onClick={handleAddStock}
+              disabled={isAdding}
+              className="bg-blue-600 text-white p-1.5 rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {isAdding ? <Activity size={14} className="animate-spin"/> : <Plus size={14} />}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* --- 右侧：详情与图表 --- */}
-      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col">
-        {selectedStock && (
+      {/* --- 右侧：美化后的详情看板 --- */}
+      <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+        {selectedStock ? (
           <>
-            {/* 顶部头部信息 */}
-            <div className="flex justify-between items-start mb-8">
+             {/* 顶部半透明背景装饰 */}
+            <div className={`absolute top-0 left-0 right-0 h-32 opacity-10 pointer-events-none 
+              ${Number(selectedStock.change_percent) >= 0 ? 'bg-gradient-to-b from-green-500 to-transparent' : 'bg-gradient-to-b from-red-500 to-transparent'}`} 
+            />
+
+            {/* 1. 顶部 Header */}
+            <div className="relative p-6 md:p-8 flex justify-between items-end z-10">
               <div>
-                <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight flex items-center gap-3">
-                  {selectedStock.symbol}
-                  <span className={`text-lg px-3 py-1 rounded-lg font-bold border 
-                    ${selectedStock.signal === 'BUY' ? 'bg-green-50 text-green-600 border-green-200' : 
-                      selectedStock.signal === 'SELL' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
-                    {selectedStock.signal} 建议
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 tracking-tight">{selectedStock.symbol}</h1>
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold border 
+                    ${selectedStock.signal === 'BUY' ? 'bg-green-100 text-green-700 border-green-200' : 
+                      selectedStock.signal === 'SELL' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-gray-100 text-gray-500'}`}>
+                    {selectedStock.signal}
                   </span>
-                </h1>
-                <p className="text-gray-500 mt-2 flex items-center gap-2 text-sm">
-                  <Clock size={14}/> 更新时间: {new Date(selectedStock.updated_at).toLocaleString()}
-                </p>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-gray-500">
+                  <span className="flex items-center gap-1"><Search size={14}/> Price: ${selectedStock.price}</span>
+                  <span className="flex items-center gap-1"><Zap size={14}/> RSI: {selectedStock.rsi}</span>
+                </div>
               </div>
               
               <div className="text-right">
-                <div className="text-sm text-gray-400 mb-1">AI 预测价格</div>
-                <div className={`text-3xl font-mono font-bold ${Number(selectedStock.prediction) > Number(selectedStock.price) ? 'text-green-600' : 'text-red-600'}`}>
+                <div className="text-xs text-gray-400 uppercase tracking-widest mb-1">AI Prediction</div>
+                <div className={`text-3xl font-mono font-bold ${Number(selectedStock.prediction) > Number(selectedStock.price) ? 'text-green-600' : 'text-red-500'}`}>
                   ${selectedStock.prediction}
                 </div>
               </div>
             </div>
 
-            {/* 主要指标卡片 */}
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 mb-1">当前价格</div>
-                <div className="text-2xl font-bold text-gray-800">${selectedStock.price}</div>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 mb-1">今日涨跌</div>
-                <div className={`text-2xl font-bold flex items-center gap-1 ${Number(selectedStock.change_percent) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                   {Number(selectedStock.change_percent)}%
-                </div>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 mb-1">RSI 强度</div>
-                <div className="text-2xl font-bold text-blue-600">{selectedStock.rsi}</div>
-              </div>
-            </div>
+            {/* 2. 曲线图区域 */}
+            <div className="flex-1 p-4 md:p-8 min-h-[400px]">
+              <div className="w-full h-full bg-gray-50/50 rounded-2xl border border-gray-100 p-4 relative">
+                 <h3 className="absolute top-4 left-4 text-xs font-bold text-gray-400 flex items-center gap-2">
+                   <Activity size={14}/> WEEKLY TREND
+                 </h3>
+                 
+                 <ResponsiveContainer width="100%" height="100%">
+                   <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                     <defs>
+                       <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                         <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                       </linearGradient>
+                     </defs>
+                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                     <XAxis 
+                       dataKey="date" 
+                       axisLine={false} 
+                       tickLine={false} 
+                       tick={{fill: '#9ca3af', fontSize: 11}} 
+                       dy={10}
+                     />
+                     <YAxis 
+                       domain={['dataMin - 1', 'dataMax + 1']} 
+                       axisLine={false} 
+                       tickLine={false} 
+                       tick={{fill: '#9ca3af', fontSize: 11}}
+                       tickFormatter={(num) => `$${num}`}
+                     />
+                     <Tooltip 
+                       contentStyle={{backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}
+                       itemStyle={{color: '#1f2937', fontWeight: 'bold'}}
+                     />
+                     
+                     {/* 标注最高价 */}
+                     <ReferenceLine y={maxPrice} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.5}>
+                        <Label value={`High: $${maxPrice}`} position="insideTopRight" fill="#ef4444" fontSize={10} />
+                     </ReferenceLine>
+                     
+                     {/* 标注最低价 */}
+                     <ReferenceLine y={minPrice} stroke="#10b981" strokeDasharray="3 3" strokeOpacity={0.5}>
+                        <Label value={`Low: $${minPrice}`} position="insideBottomRight" fill="#10b981" fontSize={10} />
+                     </ReferenceLine>
 
-            {/* 图表区域 */}
-            <div className="flex-1 min-h-[300px] w-full relative">
-               <h3 className="text-sm font-bold text-gray-500 mb-4 flex items-center gap-2">
-                 <Activity size={16}/> 过去7天走势
-               </h3>
-               <ResponsiveContainer width="100%" height="100%">
-                 <AreaChart data={chartData}>
-                   <defs>
-                     <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                       <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
-                       <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                     </linearGradient>
-                   </defs>
-                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                   <XAxis 
-                     dataKey="date" 
-                     axisLine={false} 
-                     tickLine={false} 
-                     tick={{fill: '#9ca3af', fontSize: 12}} 
-                     dy={10}
-                   />
-                   <YAxis 
-                     domain={['auto', 'auto']} 
-                     axisLine={false} 
-                     tickLine={false} 
-                     tick={{fill: '#9ca3af', fontSize: 12}}
-                     tickFormatter={(number) => `$${number}`}
-                   />
-                   <Tooltip 
-                     contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                   />
-                   <Area 
-                     type="monotone" 
-                     dataKey="price" 
-                     stroke="#2563eb" 
-                     strokeWidth={3}
-                     fillOpacity={1} 
-                     fill="url(#colorPrice)" 
-                   />
-                 </AreaChart>
-               </ResponsiveContainer>
+                     <Area 
+                       type="monotone" 
+                       dataKey="price" 
+                       stroke="#3b82f6" 
+                       strokeWidth={3}
+                       fillOpacity={1} 
+                       fill="url(#colorPrice)" 
+                       animationDuration={1000}
+                     />
+                   </AreaChart>
+                 </ResponsiveContainer>
+              </div>
             </div>
           </>
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-300">
+            <div className="text-center">
+              <Activity size={48} className="mx-auto mb-4 opacity-50"/>
+              <p>Select a stock to view analysis</p>
+            </div>
+          </div>
         )}
       </div>
     </div>
