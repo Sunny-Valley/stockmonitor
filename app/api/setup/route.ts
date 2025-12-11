@@ -1,25 +1,11 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 
-
-CREATE TABLE IF NOT EXISTS ai_signals (
-  id SERIAL PRIMARY KEY,
-  symbol VARCHAR(20) NOT NULL,
-  timestamp TIMESTAMP NOT NULL,
-  price DECIMAL,
-  signal_score DECIMAL, -- -100 (强力做空) 到 100 (强力做多)
-  action VARCHAR(10),   -- 'BUY', 'SELL', 'HOLD'
-  reason TEXT,          -- AI 的分析理由
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(symbol, timestamp)
-);
-
-// >>> 新增这一行，强制不缓存，每次都去数据库查 <<<
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // 1. 创建 watchlist 表
+    // 1. 确保 watchlist 表存在 (之前的步骤)
     await sql`
       CREATE TABLE IF NOT EXISTS watchlist (
         symbol VARCHAR(20) PRIMARY KEY,
@@ -28,25 +14,32 @@ export async function GET() {
       );
     `;
 
-    // 2. 插入初始数据 (使用 ON CONFLICT DO NOTHING 防止重复报错)
+    // 2. >>> 核心修复：创建 ai_signals 表 <<<
+    // 这张表用来存储 Python 后端计算出来的 AI 信号
     await sql`
-      INSERT INTO watchlist (symbol, name) 
-      VALUES 
-        ('RGTI', 'Rigetti Computing'),
-        ('QBTS', 'D-Wave Quantum'),
-        ('IONQ', 'IonQ Inc')
-      ON CONFLICT (symbol) DO NOTHING;
+      CREATE TABLE IF NOT EXISTS ai_signals (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timestamp TIMESTAMP NOT NULL,
+        price DECIMAL,
+        signal_score DECIMAL,
+        action VARCHAR(10),
+        reason TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(symbol, timestamp)
+      );
     `;
 
     return NextResponse.json({ 
-      message: "数据库初始化成功！表已创建，默认数据已添加。", 
-      success: true 
+      success: true, 
+      message: "数据库初始化成功！表 'watchlist' 和 'ai_signals' 已准备就绪。" 
     });
     
   } catch (error) {
+    console.error("Setup failed:", error);
     return NextResponse.json({ 
-      error: "初始化失败", 
-      details: error 
+      success: false, 
+      error: error 
     }, { status: 500 });
   }
 }
