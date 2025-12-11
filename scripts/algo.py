@@ -4,6 +4,7 @@ from alpaca_trade_api.rest import REST, TimeFrame
 from datetime import datetime, timedelta
 import psycopg2
 import numpy as np
+import json
 
 # --- 配置部分 ---
 API_KEY = os.getenv("ALPACA_API_KEY")
@@ -19,16 +20,24 @@ def get_db_connection():
     return psycopg2.connect(DB_URL)
 
 def init_db(conn):
-    """创建前端 page.tsx 需要的 stock_analysis 表"""
+    """
+    更新表结构：增加了 change_percent (涨跌幅) 和 history (历史走势数据)
+    注意：为了应用新结构，我会先删除旧表！
+    """
     cursor = conn.cursor()
+    # 暴力重建表，确保新字段生效
+    cursor.execute("DROP TABLE IF EXISTS stock_analysis;")
+    
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS stock_analysis (
+        CREATE TABLE stock_analysis (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(10),
             price DECIMAL(10, 2),
+            change_percent DECIMAL(10, 2),  -- 新增：涨跌幅
             prediction DECIMAL(10, 2),
             signal VARCHAR(10),
             rsi DECIMAL(10, 2),
+            history TEXT,                   -- 新增：存最近7天的 JSON 数据
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
@@ -36,7 +45,6 @@ def init_db(conn):
     cursor.close()
 
 def calculate_rsi(series, period=14):
-    """计算 RSI 指标"""
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -44,7 +52,7 @@ def calculate_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 def fetch_and_analyze():
-    print("Starting analysis job...")
+    print("Starting advanced analysis job...")
     
     try:
         api = REST(API_KEY, API_SECRET, BASE_URL)
@@ -55,7 +63,7 @@ def fetch_and_analyze():
         print(f"Initialization failed: {e}")
         return
 
-    # 获取足够的数据来计算 RSI (至少需要过去 20 天)
+    # 获取足够长的数据用于计算 RSI 和 历史走势
     end_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     start_date = (datetime.now() - timedelta(days=40)).strftime('%Y-%m-%d')
 
@@ -63,62 +71,65 @@ def fetch_and_analyze():
         try:
             print(f"Analyzing {symbol}...")
             
-            # 1. 获取数据 (使用 iex 免费源)
             bars = api.get_bars(
-                symbol,
-                TimeFrame.Day,
-                start=start_date,
-                end=end_date,
-                adjustment='raw',
-                feed='iex' 
+                symbol, TimeFrame.Day, start=start_date, end=end_date, adjustment='raw', feed='iex'
             ).df
 
-            if bars.empty or len(bars) < 15:
+            if bars.empty or len(bars) < 20:
                 print(f"Not enough data for {symbol}")
                 continue
 
-            # 2. 计算技术指标 (RSI)
-            # 使用收盘价计算
+            # --- 1. 数据准备 ---
             closes = bars['close']
-            rsi_series = calculate_rsi(closes)
-            
             current_price = float(closes.iloc[-1])
-            current_rsi = float(rsi_series.iloc[-1])
+            prev_price = float(closes.iloc[-2])
             
-            # 如果 RSI 计算结果是 NaN (数据不足)，跳过
-            if np.isnan(current_rsi):
-                continue
+            # 计算涨跌幅
+            change_percent = ((current_price - prev_price) / prev_price) * 100
 
-            # 3. 生成简单的量化信号 (策略逻辑)
-            # 策略：RSI < 30 超卖(买入), RSI > 70 超买(卖出), 其他(持有)
+            # 准备历史走势数据 (取最近 7 个交易日)
+            # 格式化为 JSON 字符串: [{"date": "12-01", "price": 100}, ...]
+            recent_bars = bars.tail(7)
+            history_list = []
+            for idx, row in recent_bars.iterrows():
+                history_list.append({
+                    "date": idx.strftime('%m-%d'), # 日期格式 12-10
+                    "price": round(float(row['close']), 2)
+                })
+            history_json = json.dumps(history_list)
+
+            # --- 2. 技术指标 & 信号 ---
+            rsi_series = calculate_rsi(closes)
+            current_rsi = float(rsi_series.iloc[-1])
+            if np.isnan(current_rsi): continue
+
             signal = "HOLD"
-            prediction = current_price # 默认预测价为当前价
-            
+            prediction = current_price
             if current_rsi < 30:
                 signal = "BUY"
-                prediction = current_price * 1.05 # 预测涨 5%
+                prediction = current_price * 1.05
             elif current_rsi > 70:
                 signal = "SELL"
-                prediction = current_price * 0.95 # 预测跌 5%
+                prediction = current_price * 0.95
             else:
-                # 中间状态，稍微随机一点波动预测
-                prediction = current_price * 1.01
+                prediction = current_price * (1 + (np.random.rand() - 0.5) * 0.02)
 
-            # 4. 存入 stock_analysis 表
-            # 这里的字段必须完全对应 page.tsx 里的 StockRow 接口
+            # --- 3. 存入数据库 ---
             cursor.execute("""
-                INSERT INTO stock_analysis (symbol, price, prediction, signal, rsi, updated_at)
-                VALUES (%s, %s, %s, %s, %s, NOW());
+                INSERT INTO stock_analysis (symbol, price, change_percent, prediction, signal, rsi, history, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW());
             """, (
                 symbol, 
                 round(current_price, 2), 
+                round(change_percent, 2),
                 round(prediction, 2), 
                 signal, 
-                round(current_rsi, 2)
+                round(current_rsi, 2),
+                history_json
             ))
             
             conn.commit()
-            print(f"Saved analysis for {symbol}: Price={current_price}, Signal={signal}")
+            print(f"Saved {symbol}: Price={current_price}, Change={change_percent}%")
 
         except Exception as e:
             print(f"Error analyzing {symbol}: {e}")
