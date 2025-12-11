@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
-// --- 修复点：这里补充了 ArrowUp 和 ArrowDown 的引入 ---
 import { Trash2, Plus, Search, Zap, Activity, Info, ArrowUp, ArrowDown } from 'lucide-react';
 import { addStock, deleteStock } from '../actions';
 
@@ -18,7 +17,6 @@ interface StockData {
   updated_at: Date;
 }
 
-// 自定义图表标签渲染函数
 const renderCustomLabel = (props: any) => {
   const { x, y, value, index, dataLength } = props;
   return (
@@ -30,7 +28,6 @@ const renderCustomLabel = (props: any) => {
   );
 };
 
-// 生成预测解释文本
 const getPredictionReasoning = (stock: StockData) => {
   const rsi = Number(stock.rsi);
   const signal = stock.signal;
@@ -243,8 +240,9 @@ export default function Dashboard({ data }: { data: StockData[] }) {
                        dy={10}
                        padding={{ left: 20, right: 20 }}
                      />
+                     {/* --- 修正点：去掉了 .toFixed(2)，让它返回数字 --- */}
                      <YAxis 
-                       domain={[dataMin => (dataMin * 0.998).toFixed(2), dataMax => (dataMax * 1.002).toFixed(2)]} 
+                       domain={[dataMin => (dataMin * 0.998), dataMax => (dataMax * 1.002)]} 
                        hide={true} 
                      />
                      <Tooltip 
