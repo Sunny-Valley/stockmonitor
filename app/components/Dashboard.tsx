@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
-import { Trash2, Plus, Search, Zap, Activity, Info } from 'lucide-react';
+// --- 修复点：这里补充了 ArrowUp 和 ArrowDown 的引入 ---
+import { Trash2, Plus, Search, Zap, Activity, Info, ArrowUp, ArrowDown } from 'lucide-react';
 import { addStock, deleteStock } from '../actions';
 
 interface StockData {
@@ -17,11 +18,9 @@ interface StockData {
   updated_at: Date;
 }
 
-// --- 新增：自定义图表标签渲染函数 (显示价格数字) ---
+// 自定义图表标签渲染函数
 const renderCustomLabel = (props: any) => {
   const { x, y, value, index, dataLength } = props;
-  // 为了避免太密集，可以只显示首尾和中间的，或者全部显示。
-  // 这里我们尝试全部显示，通过调整字体和位置来优化。
   return (
     <g transform={`translate(${x},${y})`}>
       <text x={0} y={-12} dy={0} textAnchor="middle" fill="#1f2937" fontSize={11} fontWeight="700" stroke="white" strokeWidth="2px" paintOrder="stroke">
@@ -31,7 +30,7 @@ const renderCustomLabel = (props: any) => {
   );
 };
 
-// --- 新增：生成预测解释文本的函数 ---
+// 生成预测解释文本
 const getPredictionReasoning = (stock: StockData) => {
   const rsi = Number(stock.rsi);
   const signal = stock.signal;
@@ -115,7 +114,7 @@ export default function Dashboard({ data }: { data: StockData[] }) {
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] bg-gray-50/50 p-4 gap-4 max-w-[1800px] mx-auto font-sans">
       
-      {/* --- 左侧：股票列表 (保持不变) --- */}
+      {/* --- 左侧：股票列表 --- */}
       <div className="w-full md:w-64 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex-shrink-0">
         <div className="p-3 border-b border-gray-100 bg-gray-50/80 backdrop-blur flex justify-between items-center">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Stock Pool</span>
@@ -220,7 +219,7 @@ export default function Dashboard({ data }: { data: StockData[] }) {
               </div>
             </div>
 
-            {/* 2. 曲线图区域 (更新) */}
+            {/* 2. 曲线图区域 */}
             <div className="flex-1 p-4 min-h-[350px] relative z-0">
               <div className="w-full h-full bg-gradient-to-b from-white to-gray-50/50 rounded-xl border border-gray-100/50 p-2 pb-0 relative overflow-hidden">
                  <h3 className="absolute top-4 left-6 text-xs font-bold text-gray-400 flex items-center gap-2 z-10">
@@ -245,8 +244,8 @@ export default function Dashboard({ data }: { data: StockData[] }) {
                        padding={{ left: 20, right: 20 }}
                      />
                      <YAxis 
-                       domain={[dataMin => (dataMin * 0.998).toFixed(2), dataMax => (dataMax * 1.002).toFixed(2)]} // 稍微留点余地
-                       hide={true} // 隐藏 Y 轴，因为我们在图上直接标了数字
+                       domain={[dataMin => (dataMin * 0.998).toFixed(2), dataMax => (dataMax * 1.002).toFixed(2)]} 
+                       hide={true} 
                      />
                      <Tooltip 
                        contentStyle={{backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'}}
@@ -271,7 +270,6 @@ export default function Dashboard({ data }: { data: StockData[] }) {
                        fillOpacity={1} 
                        fill="url(#colorPrice)" 
                        animationDuration={1000}
-                       // --- 关键修改：添加小圆点和自定义标签 ---
                        dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: '#3b82f6', strokeOpacity: 1 }}
                        activeDot={{ r: 6, strokeWidth: 0, fill: '#3b82f6' }}
                        label={renderCustomLabel}
@@ -281,7 +279,7 @@ export default function Dashboard({ data }: { data: StockData[] }) {
               </div>
             </div>
 
-            {/* 3. 新增：底部预测解释说明 */}
+            {/* 3. 底部预测解释说明 */}
             <div className="p-6 bg-gray-50/50 border-t border-gray-100">
               <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Zap size={16} className="text-yellow-500 fill-yellow-500"/>
@@ -304,7 +302,7 @@ export default function Dashboard({ data }: { data: StockData[] }) {
           <div className="flex items-center justify-center h-full text-gray-400 bg-gray-50/50">
             <div className="text-center p-8 rounded-2xl border border-gray-100 bg-white shadow-sm">
               <Activity size={40} className="mx-auto mb-4 text-blue-100"/>
-              <p className="font-medium">Select a stock from the pool to view AI analysis.</p>
+              <p className="font-medium">Select a stock from the pool to view analysis.</p>
             </div>
           </div>
         )}
