@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { subBusinessDays, format, addMinutes, setHours, setMinutes } from 'date-fns';
 
-// 自定义向下三角形组件（用于卖出信号）
+// 1. 图表用的形状组件 (依赖 cx, cy 坐标)
 const TriangleDown = (props: any) => {
   const { cx, cy, fill } = props;
   return (
@@ -28,7 +28,6 @@ const TriangleDown = (props: any) => {
   );
 };
 
-// 自定义向上三角形组件（用于买入信号）
 const TriangleUp = (props: any) => {
   const { cx, cy, fill } = props;
   return (
@@ -40,6 +39,41 @@ const TriangleUp = (props: any) => {
   );
 }
 
+// 2. >>> 新增：自定义图例组件 (用于修复 TypeScript 报错) <<<
+// 这个组件不依赖 Recharts 的内部类型，直接渲染 HTML
+const renderLegend = () => {
+  return (
+    <div className="flex justify-center items-center gap-6 text-xs mt-2 text-gray-600">
+      {/* 买入 */}
+      <div className="flex items-center gap-1.5">
+        <svg width="10" height="10" viewBox="0 0 12 12" className="overflow-visible">
+          <path d="M1 10 L6 2 L11 10 Z" fill="#22c55e" />
+        </svg>
+        <span>买入信号</span>
+      </div>
+      
+      {/* 卖出 */}
+      <div className="flex items-center gap-1.5">
+        <svg width="10" height="10" viewBox="0 0 12 12" className="overflow-visible">
+          <path d="M1 2 L11 2 L6 10 Z" fill="#ef4444" />
+        </svg>
+        <span>卖出信号</span>
+      </div>
+
+      {/* 持有 */}
+      <div className="flex items-center gap-1.5">
+        <div className="w-2.5 h-2.5 rounded-full bg-gray-300"></div>
+        <span>持有</span>
+      </div>
+
+      {/* 股价 */}
+      <div className="flex items-center gap-1.5">
+        <div className="w-4 h-0.5 bg-blue-600"></div>
+        <span>股价</span>
+      </div>
+    </div>
+  );
+};
 
 interface ChartData {
   timestamp: string;
@@ -60,10 +94,7 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
       const result: ChartData[] = [];
       const now = new Date();
       
-      // 根据不同股票设置模拟初始价
       let currentPrice = currentSymbol === 'RGTI' ? 1.5 : (currentSymbol === 'QBTS' ? 2.3 : 150.00); 
-      
-      // 信号阈值：根据实际情况调整。为了演示，这里设置得较低以产生更多信号。
       const THRESHOLD = 2; 
 
       for (let i = 3; i > 0; i--) {
@@ -72,16 +103,11 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
         const endTime = setMinutes(setHours(dateBase, 16), 0);
 
         while (timeCursor <= endTime) {
-          // 1. 模拟股价走势
           const change = (Math.random() - 0.5) * (currentPrice * 0.015);
           currentPrice += change;
-
-          // 2. 模拟信号生成 (这里使用一个更容易触发的模拟逻辑)
-          // 实际项目中，这里应替换为您真实的预测模型输出
           const mockSignalNoise = (Math.random() - 0.5) * 10;
           const backtestSignal = mockSignalNoise;
 
-          // --- 核心修复：确保买卖点的值等于当前股价 ---
           let action = '持有';
           let buyVal: number | null = null;
           let sellVal: number | null = null;
@@ -89,11 +115,9 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
 
           if (backtestSignal > THRESHOLD) {
             action = '买入';
-            // 【重要】将买入点的值设为当前股价，这样它才会显示在价格线上
             buyVal = currentPrice; 
           } else if (backtestSignal < -THRESHOLD) {
             action = '卖出';
-            // 【重要】将卖出点的值设为当前股价
             sellVal = currentPrice;
           } else {
             action = '持有';
@@ -177,7 +201,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
             <YAxis 
               yAxisId="left" 
               orientation="left"
-              // 自动调整Y轴范围，增加一点内边距
               domain={[minPrice * 0.99, maxPrice * 1.01]} 
               tick={{ fontSize: 10, fill: '#2563eb' }}
               width={40}
@@ -186,17 +209,11 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
             
             <Tooltip content={<CustomTooltip />} />
             
-            {/* 图例：使用自定义图标以匹配图表 */}
+            {/* >>> 修复点：使用 content 属性替代 payload 属性 <<< */}
             <Legend 
               verticalAlign="top" 
               height={36} 
-              iconSize={10}
-              payload={[
-                { value: '买入信号', type: 'triangle', color: '#22c55e' },
-                { value: '卖出信号', type: 'triangle', color: '#ef4444', shape: <TriangleDown fill="#ef4444" cx={0} cy={0} /> },
-                { value: '持有', type: 'circle', color: '#d1d5db' },
-                { value: '股价', type: 'line', color: '#2563eb' }
-              ]}
+              content={renderLegend}
             />
             
             <ReferenceLine yAxisId="left" y={maxPrice} stroke="#e5e7eb" strokeDasharray="3 3">
@@ -225,7 +242,7 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               dataKey="buyPoint" 
               fill="#22c55e" 
               shape={<TriangleUp />}
-              legendType="none" // 在自定义图例中处理
+              // 移除 legendType，因为我们完全接管了 legend 的渲染
             />
 
             {/* 卖出点 (红色向下三角形) */}
@@ -235,7 +252,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               dataKey="sellPoint" 
               fill="#ef4444" 
               shape={<TriangleDown />} 
-              legendType="none"
             />
 
             {/* 持有点 (灰色小圆点) */}
@@ -246,7 +262,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               fill="#d1d5db" 
               shape="circle"
               r={1.5}
-              legendType="none"
             />
 
           </ComposedChart>
