@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
 import { ArrowUp, ArrowDown, Trash2, Plus, Search, Zap, Activity } from 'lucide-react';
-import { addStock, deleteStock } from '../actions'; // 导入我们刚才写的 Server Actions
+import { addStock, deleteStock } from '../actions';
 
 interface StockData {
   id: number;
@@ -22,14 +22,12 @@ export default function Dashboard({ data }: { data: StockData[] }) {
   const [newSymbol, setNewSymbol] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
-  // 确保数据存在
   const safeData = data || [];
 
   const selectedStock = useMemo(() => 
     safeData.find(item => item.symbol === selectedSymbol) || safeData[0], 
   [safeData, selectedSymbol]);
 
-  // 解析图表数据并计算高低点
   const { chartData, maxPrice, minPrice } = useMemo(() => {
     if (!selectedStock?.history) return { chartData: [], maxPrice: 0, minPrice: 0 };
     try {
@@ -56,25 +54,23 @@ export default function Dashboard({ data }: { data: StockData[] }) {
   };
 
   const handleDeleteStock = async (e: React.MouseEvent, symbol: string) => {
-    e.stopPropagation(); // 防止触发选择事件
+    e.stopPropagation();
     if (confirm(`确定要删除 ${symbol} 吗?`)) {
       await deleteStock(symbol);
-      if (selectedSymbol === symbol) setSelectedSymbol(safeData[0]?.symbol || '');
+      if (selectedSymbol === symbol) setSelectedSymbol(safeData.length > 1 ? safeData[0].symbol : '');
     }
   };
 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] bg-gray-50/50 p-4 gap-4 max-w-[1800px] mx-auto font-sans">
       
-      {/* --- 左侧：紧凑型股票池 --- */}
+      {/* --- 左侧：股票列表 --- */}
       <div className="w-full md:w-64 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        {/* 头部 */}
         <div className="p-3 border-b border-gray-100 bg-gray-50/80 backdrop-blur flex justify-between items-center">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Stock Pool</span>
           <span className="text-xs bg-gray-200 text-gray-600 px-1.5 rounded-md">{safeData.length}</span>
         </div>
 
-        {/* 列表区域 */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           {safeData.map((stock) => {
             const change = Number(stock.change_percent);
@@ -85,11 +81,10 @@ export default function Dashboard({ data }: { data: StockData[] }) {
               <div 
                 key={stock.id}
                 onClick={() => setSelectedSymbol(stock.symbol)}
-                className={`group relative flex items-center justify-between px-4 py-2.5 border-b border-gray-50 cursor-pointer transition-all hover:bg-gray-50
+                className={`group relative flex items-center justify-between px-4 py-3 border-b border-gray-50 cursor-pointer transition-all hover:bg-gray-50
                   ${isSelected ? 'bg-blue-50/60 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}
                 `}
               >
-                {/* 股票基本信息 */}
                 <div className="flex flex-col">
                   <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
                     {stock.symbol}
@@ -99,25 +94,24 @@ export default function Dashboard({ data }: { data: StockData[] }) {
                   </span>
                 </div>
 
-                {/* 价格与删除按钮 */}
                 <div className="text-right">
                   <div className="text-sm font-mono font-medium text-gray-900">${stock.price}</div>
-                  
-                  {/* 悬停显示的删除按钮 */}
-                  <button 
-                    onClick={(e) => handleDeleteStock(e, stock.symbol)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Delete Stock"
-                  >
-                    <Trash2 size={14} />
-                  </button>
                 </div>
+
+                {/* --- 这里的样式实现了：绝对定位 + 悬浮显示 --- */}
+                <button 
+                  onClick={(e) => handleDeleteStock(e, stock.symbol)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md 
+                             opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/90 shadow-sm border border-gray-100"
+                  title="Remove"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             );
           })}
         </div>
 
-        {/* 底部：添加功能 */}
         <div className="p-3 border-t border-gray-100 bg-white">
           <div className="flex gap-2">
             <input 
@@ -139,16 +133,14 @@ export default function Dashboard({ data }: { data: StockData[] }) {
         </div>
       </div>
 
-      {/* --- 右侧：美化后的详情看板 --- */}
+      {/* --- 右侧：图表 (保持不变) --- */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
         {selectedStock ? (
           <>
-             {/* 顶部半透明背景装饰 */}
             <div className={`absolute top-0 left-0 right-0 h-32 opacity-10 pointer-events-none 
               ${Number(selectedStock.change_percent) >= 0 ? 'bg-gradient-to-b from-green-500 to-transparent' : 'bg-gradient-to-b from-red-500 to-transparent'}`} 
             />
 
-            {/* 1. 顶部 Header */}
             <div className="relative p-6 md:p-8 flex justify-between items-end z-10">
               <div>
                 <div className="flex items-center gap-3 mb-1">
@@ -173,7 +165,6 @@ export default function Dashboard({ data }: { data: StockData[] }) {
               </div>
             </div>
 
-            {/* 2. 曲线图区域 */}
             <div className="flex-1 p-4 md:p-8 min-h-[400px]">
               <div className="w-full h-full bg-gray-50/50 rounded-2xl border border-gray-100 p-4 relative">
                  <h3 className="absolute top-4 left-4 text-xs font-bold text-gray-400 flex items-center gap-2">
@@ -208,12 +199,10 @@ export default function Dashboard({ data }: { data: StockData[] }) {
                        itemStyle={{color: '#1f2937', fontWeight: 'bold'}}
                      />
                      
-                     {/* 标注最高价 */}
                      <ReferenceLine y={maxPrice} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.5}>
                         <Label value={`High: $${maxPrice}`} position="insideTopRight" fill="#ef4444" fontSize={10} />
                      </ReferenceLine>
                      
-                     {/* 标注最低价 */}
                      <ReferenceLine y={minPrice} stroke="#10b981" strokeDasharray="3 3" strokeOpacity={0.5}>
                         <Label value={`Low: $${minPrice}`} position="insideBottomRight" fill="#10b981" fontSize={10} />
                      </ReferenceLine>
