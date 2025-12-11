@@ -16,9 +16,12 @@ import {
 } from 'recharts';
 import { subBusinessDays, format, addMinutes, setHours, setMinutes } from 'date-fns';
 
-// 1. 图表用的形状组件 (依赖 cx, cy 坐标)
+// 1. >>> 核心修复：增加坐标有效性检查 <<<
+// 如果 Recharts 传入的 cx 或 cy 无效（比如对应的数据是 null），直接不渲染
 const TriangleDown = (props: any) => {
   const { cx, cy, fill } = props;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  
   return (
     <path 
       d={`M${cx - 5} ${cy - 4} L${cx + 5} ${cy - 4} L${cx} ${cy + 5} Z`} 
@@ -30,6 +33,8 @@ const TriangleDown = (props: any) => {
 
 const TriangleUp = (props: any) => {
   const { cx, cy, fill } = props;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+
   return (
     <path 
       d={`M${cx - 5} ${cy + 4} L${cx + 5} ${cy + 4} L${cx} ${cy - 5} Z`} 
@@ -39,8 +44,7 @@ const TriangleUp = (props: any) => {
   );
 }
 
-// 2. >>> 新增：自定义图例组件 (用于修复 TypeScript 报错) <<<
-// 这个组件不依赖 Recharts 的内部类型，直接渲染 HTML
+// 2. 自定义图例组件
 const renderLegend = () => {
   return (
     <div className="flex justify-center items-center gap-6 text-xs mt-2 text-gray-600">
@@ -209,7 +213,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
             
             <Tooltip content={<CustomTooltip />} />
             
-            {/* >>> 修复点：使用 content 属性替代 payload 属性 <<< */}
             <Legend 
               verticalAlign="top" 
               height={36} 
@@ -235,17 +238,16 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               name="股价"
             />
 
-            {/* 买入点 (绿色向上三角形) */}
+            {/* 买入点 */}
             <Scatter 
               yAxisId="left" 
               name="买入" 
               dataKey="buyPoint" 
               fill="#22c55e" 
               shape={<TriangleUp />}
-              // 移除 legendType，因为我们完全接管了 legend 的渲染
             />
 
-            {/* 卖出点 (红色向下三角形) */}
+            {/* 卖出点 */}
             <Scatter 
               yAxisId="left" 
               name="卖出" 
@@ -254,7 +256,7 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               shape={<TriangleDown />} 
             />
 
-            {/* 持有点 (灰色小圆点) */}
+            {/* 持有点 */}
             <Scatter 
               yAxisId="left" 
               name="持有" 
