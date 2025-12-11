@@ -1,21 +1,20 @@
 import os
 import pandas as pd
-import alpaca_trade_api as tradeapi
-from alpaca_trade_api.rest import REST, TimeFrame  # <--- 修正点1：显式引入 TimeFrame
+from alpaca_trade_api.rest import REST, TimeFrame
 from datetime import datetime, timedelta
 import psycopg2
-from urllib.parse import urlparse
 
 # --- 配置部分 ---
 # 从环境变量获取 API Key (在 GitHub Secrets 中设置)
 API_KEY = os.getenv("ALPACA_API_KEY")
 API_SECRET = os.getenv("ALPACA_API_SECRET")
-BASE_URL = "https://paper-api.alpaca.markets"  # 或者 https://api.alpaca.markets
+# 使用 Paper Trading (模拟盘) 地址
+BASE_URL = "https://paper-api.alpaca.markets"
 
 # 数据库连接串
 DB_URL = os.getenv("POSTGRES_URL")
 
-# 要抓取的股票列表 (根据你的日志补充)
+# 要抓取的股票列表
 SYMBOLS = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "GOOGL", "AMZN", "META", "NFLX", "COIN"]
 
 def get_db_connection():
@@ -27,9 +26,8 @@ def get_db_connection():
     return psycopg2.connect(DB_URL)
 
 def init_db(conn):
-    """确保表存在 (根据你的项目需求调整表结构)"""
+    """确保表存在"""
     cursor = conn.cursor()
-    # 创建一个通用的 market_data 表，如果不存在的话
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS market_data (
             symbol VARCHAR(10),
@@ -47,14 +45,13 @@ def init_db(conn):
 
 def fetch_and_store_data():
     print("Starting data fetch...")
-
-    # --- 新增调试代码 Start ---
-    print(f"DEBUG: API_KEY Type: {type(API_KEY)}")
-    print(f"DEBUG: API_KEY Length: {len(str(API_KEY)) if API_KEY else 'None'}")
-    # --- 新增调试代码 End ---
     
     # 初始化 Alpaca API
-    api = REST(API_KEY, API_SECRET, BASE_URL)
+    try:
+        api = REST(API_KEY, API_SECRET, BASE_URL)
+    except Exception as e:
+        print(f"Failed to initialize Alpaca API: {e}")
+        return
     
     try:
         conn = get_db_connection()
@@ -72,13 +69,14 @@ def fetch_and_store_data():
         try:
             print(f"Fetching data for {symbol}...")
             
-            # --- 修正点2：使用正确的 TimeFrame 调用方式 ---
+            # --- 关键修正：添加 feed='iex' 以支持免费账户 ---
             bars = api.get_bars(
                 symbol,
-                TimeFrame.Day,  # <--- 原来这里写的是 REST.TimeFrame.Day (报错原因)
+                TimeFrame.Day,
                 start=start_date,
                 end=end_date,
-                adjustment='raw'
+                adjustment='raw',
+                feed='iex'  # <--- 这里指定使用 IEX (免费数据源)
             ).df
 
             if bars.empty:
