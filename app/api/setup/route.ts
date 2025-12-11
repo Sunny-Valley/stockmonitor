@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 
+
+CREATE TABLE IF NOT EXISTS ai_signals (
+  id SERIAL PRIMARY KEY,
+  symbol VARCHAR(20) NOT NULL,
+  timestamp TIMESTAMP NOT NULL,
+  price DECIMAL,
+  signal_score DECIMAL, -- -100 (强力做空) 到 100 (强力做多)
+  action VARCHAR(10),   -- 'BUY', 'SELL', 'HOLD'
+  reason TEXT,          -- AI 的分析理由
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(symbol, timestamp)
+);
+
 // >>> 新增这一行，强制不缓存，每次都去数据库查 <<<
 export const dynamic = 'force-dynamic';
 

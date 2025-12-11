@@ -1,7 +1,4 @@
-alpaca-trade-api
+alpaca-py
 pandas
 numpy
-xgboost
 psycopg2-binary
-pytz
-scikit-learn
