@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 
+// >>> 新增这一行，强制不缓存，每次都去数据库查 <<<
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // 1. 创建 watchlist 表

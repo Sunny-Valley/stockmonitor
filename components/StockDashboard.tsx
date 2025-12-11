@@ -1,62 +1,112 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import StockPredictionChart from './StockPredictionChart';
 
-// 定义股票类型
 interface Stock {
   symbol: string;
   name: string;
 }
 
 export default function StockDashboard() {
-  // 1. 股票池状态管理
-  const [stocks, setStocks] = useState<Stock[]>([
-    { symbol: 'RGTI', name: 'Rigetti Computing' },
-    { symbol: 'QBTS', name: 'D-Wave Quantum' },
-    { symbol: 'TSLA', name: 'Tesla Inc' }
-  ]);
-  
-  // 2. 当前选中的股票
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('RGTI');
-  
-  // 3. 输入框状态
+  const [stocks, setStocks] = useState<Stock[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('');
   const [newSymbol, setNewSymbol] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 添加股票逻辑
-  const handleAddStock = (e: React.FormEvent) => {
+  // --- 1. 加载：从数据库获取列表 ---
+  useEffect(() => {
+    fetchStocks();
+  }, []);
+
+  const fetchStocks = async () => {
+    try {
+      const res = await fetch('/api/watchlist');
+      const data = await res.json();
+      setStocks(data);
+      if (data.length > 0 && !selectedSymbol) {
+        setSelectedSymbol(data[0].symbol);
+      }
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Failed to fetch stocks", error);
+      setIsLoading(false);
+    }
+  };
+
+  // --- 2. 新增：写入数据库 ---
+  const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSymbol.trim()) return;
     const symbolUpper = newSymbol.toUpperCase();
-    if (stocks.find(s => s.symbol === symbolUpper)) {
-      alert('该股票已存在');
-      return;
-    }
-    setStocks([...stocks, { symbol: symbolUpper, name: 'Custom Stock' }]);
+
+    // 乐观更新 (先改界面，再请求) 防止卡顿
+    const tempStock = { symbol: symbolUpper, name: 'Loading...' };
+    const oldStocks = [...stocks];
+    setStocks([...stocks, tempStock]);
     setNewSymbol('');
-    setSelectedSymbol(symbolUpper); // 添加后自动选中
+
+    try {
+      const res = await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: symbolUpper, name: 'Custom Stock' }),
+      });
+
+      if (res.ok) {
+        // 成功后重新拉取最新数据（确保 ID 和名称正确）
+        await fetchStocks();
+        setSelectedSymbol(symbolUpper);
+      } else {
+        throw new Error('Save failed');
+      }
+    } catch (error) {
+      alert('添加失败，请重试');
+      setStocks(oldStocks); // 回滚
+    }
   };
 
-  // 删除股票逻辑
-  const handleDeleteStock = (symbolToDelete: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // 防止触发点击选中事件
+  // --- 3. 删除：从数据库移除 ---
+  const handleDeleteStock = async (symbolToDelete: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`确定要删除 ${symbolToDelete} 吗？`)) return;
+
+    // 乐观更新
+    const oldStocks = [...stocks];
     const updatedStocks = stocks.filter(s => s.symbol !== symbolToDelete);
     setStocks(updatedStocks);
-    // 如果删除的是当前选中的，默认选中列表第一个
-    if (selectedSymbol === symbolToDelete && updatedStocks.length > 0) {
-      setSelectedSymbol(updatedStocks[0].symbol);
+
+    if (selectedSymbol === symbolToDelete) {
+      setSelectedSymbol(updatedStocks.length > 0 ? updatedStocks[0].symbol : '');
+    }
+
+    try {
+      await fetch('/api/watchlist', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: symbolToDelete }),
+      });
+    } catch (error) {
+      alert('删除失败');
+      setStocks(oldStocks); // 回滚
     }
   };
+
+  if (isLoading) {
+    return <div className="p-10 text-center text-gray-500">正在同步云端数据...</div>;
+  }
 
   return (
     <div className="flex h-[calc(100vh-80px)] gap-6 p-6 max-w-[1800px] mx-auto">
       
-      {/* --- 左侧栏：股票池 (25% 宽度) --- */}
+      {/* 左侧栏：股票池 */}
       <div className="w-1/4 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 bg-gray-50">
-          <h3 className="font-bold text-gray-700 mb-3">我的监控池</h3>
+          <h3 className="font-bold text-gray-700 mb-3 flex justify-between items-center">
+            云端监控池
+            <span className="text-xs font-normal text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">{stocks.length}</span>
+          </h3>
           
-          {/* 添加表单 */}
           <form onSubmit={handleAddStock} className="flex gap-2">
             <input
               type="text"
@@ -65,19 +115,15 @@ export default function StockDashboard() {
               placeholder="输入代码 (如 NVDA)"
               className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500 uppercase"
             />
-            <button 
-              type="submit"
-              className="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition"
-            >
-              +
-            </button>
+            <button type="submit" className="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition font-bold">+</button>
           </form>
         </div>
 
-        {/* 股票列表 */}
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
           {stocks.length === 0 && (
-            <p className="text-center text-gray-400 text-sm mt-10">暂无股票，请添加</p>
+            <div className="flex flex-col items-center justify-center h-40 text-gray-400 text-sm">
+              <p>暂无股票</p>
+            </div>
           )}
           
           {stocks.map((stock) => (
@@ -85,46 +131,38 @@ export default function StockDashboard() {
               key={stock.symbol}
               onClick={() => setSelectedSymbol(stock.symbol)}
               className={`
-                group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all
-                ${selectedSymbol === stock.symbol 
-                  ? 'bg-blue-50 border-blue-200 border shadow-sm' 
-                  : 'hover:bg-gray-50 border border-transparent'}
+                group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border
+                ${selectedSymbol === stock.symbol ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-transparent hover:bg-gray-50'}
               `}
             >
               <div>
-                <div className={`font-bold ${selectedSymbol === stock.symbol ? 'text-blue-700' : 'text-gray-800'}`}>
+                <div className={`font-bold flex items-center gap-2 ${selectedSymbol === stock.symbol ? 'text-blue-700' : 'text-gray-800'}`}>
                   {stock.symbol}
                 </div>
-                <div className="text-xs text-gray-400 truncate max-w-[120px]">
-                  {stock.name}
-                </div>
+                <div className="text-xs text-gray-400 truncate max-w-[120px]">{stock.name}</div>
               </div>
               
               <button
                 onClick={(e) => handleDeleteStock(stock.symbol, e)}
                 className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                title="删除"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* --- 右侧栏：走势图 (75% 宽度) --- */}
+      {/* 右侧栏：走势图 */}
       <div className="w-3/4 h-full">
-        {stocks.length > 0 ? (
+        {selectedSymbol ? (
           <StockPredictionChart currentSymbol={selectedSymbol} />
         ) : (
           <div className="h-full flex items-center justify-center bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">
-            请在左侧添加股票以查看分析
+            请选择股票
           </div>
         )}
       </div>
-
     </div>
   );
 }
