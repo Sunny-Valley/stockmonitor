@@ -3,6 +3,30 @@ import Dashboard from "./components/Dashboard";
 
 export const dynamic = 'force-dynamic';
 
+import StockPredictionChart from '@/components/StockPredictionChart';
+
+export default function Home() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-between p-8 bg-gray-50">
+      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
+        {/* 顶部标题区 */}
+        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl lg:static lg:w-auto lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4">
+          Nano Banana Pro - 量子交易面板
+        </p>
+      </div>
+
+      {/* 图表展示区 */}
+      <div className="w-full max-w-6xl mt-10">
+        <StockPredictionChart />
+      </div>
+
+      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left mt-10">
+        {/* 底部占位符 */}
+      </div>
+    </main>
+  );
+}
+
 export default async function Page() {
   let rows: any[] = [];
   
