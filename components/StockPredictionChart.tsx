@@ -16,16 +16,29 @@ import {
 } from 'recharts';
 import { subBusinessDays, format, addMinutes, setHours, setMinutes } from 'date-fns';
 
+// >>> 新增：自定义倒三角形状组件 <<<
+const TriangleDown = (props: any) => {
+  const { cx, cy, fill } = props;
+  // 画一个中心在 (cx, cy) 的倒三角
+  // 坐标计算：左上(cx-5, cy-4), 右上(cx+5, cy-4), 下中(cx, cy+5)
+  return (
+    <path 
+      d={`M${cx - 5} ${cy - 4} L${cx + 5} ${cy - 4} L${cx} ${cy + 5} Z`} 
+      fill={fill} 
+      stroke="none"
+    />
+  );
+};
+
 interface ChartData {
   timestamp: string;
   displayTime: string;
   price: number;
   signal: number;
-  // 新增：用于散点图的特定字段，只有符合条件时才有值，否则为 null
   buyPoint: number | null;
   sellPoint: number | null;
   holdPoint: number | null;
-  action: string; // 用于 Tooltip 显示文字
+  action: string;
 }
 
 const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
@@ -38,8 +51,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
       const now = new Date();
       
       let currentPrice = currentSymbol === 'RGTI' ? 1.5 : (currentSymbol === 'QBTS' ? 2.3 : 150.00); 
-      
-      // 阈值设定：信号绝对值超过此数则触发买卖
       const THRESHOLD = 5; 
 
       for (let i = 3; i > 0; i--) {
@@ -51,11 +62,9 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
           const change = (Math.random() - 0.5) * (currentPrice * 0.02);
           currentPrice += change;
 
-          // 模拟信号生成
           const mockMA = currentPrice + (Math.random() - 0.5) * (currentPrice * 0.05); 
-          const backtestSignal = (mockMA - currentPrice) * 100; // 放大一点以便观察
+          const backtestSignal = (mockMA - currentPrice) * 100;
 
-          // --- 核心逻辑：判断买/卖/持 ---
           let action = '持有';
           let buyVal = null;
           let sellVal = null;
@@ -63,7 +72,7 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
 
           if (backtestSignal > THRESHOLD) {
             action = '买入';
-            buyVal = currentPrice; // 只有买入点才有值，其他为null
+            buyVal = currentPrice;
           } else if (backtestSignal < -THRESHOLD) {
             action = '卖出';
             sellVal = currentPrice;
@@ -105,7 +114,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
   // 自定义 Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      // 找到主要的数据 payload
       const mainData = payload[0].payload;
       return (
         <div className="bg-white p-3 border border-gray-200 shadow-lg rounded-lg text-xs">
@@ -169,12 +177,12 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               domain={['auto', 'auto']} 
               tick={{ fontSize: 10, fill: '#059669' }}
               width={40}
-              hide // 隐藏右轴的具体数值，保持界面在多信号点下整洁，如果想看可以删掉这行
+              hide 
             />
             
             <Tooltip content={<CustomTooltip />} />
+            <Legend verticalAlign="top" height={36}/>
             
-            {/* 辅助线 */}
             <ReferenceLine yAxisId="left" y={maxPrice} stroke="#e5e7eb" strokeDasharray="3 3">
               <Label value={`High: ${maxPrice}`} position="insideTopRight" fill="#9ca3af" fontSize={10} />
             </ReferenceLine>
@@ -182,45 +190,44 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               <Label value={`Low: ${minPrice}`} position="insideBottomRight" fill="#9ca3af" fontSize={10} />
             </ReferenceLine>
 
-            {/* 1. 主股价线 */}
+            {/* 主股价线 */}
             <Line
               yAxisId="left"
               type="monotone"
               dataKey="price"
-              stroke="#e5e7eb" // 将线变淡，突出信号点
+              stroke="#e5e7eb"
               strokeWidth={2}
               dot={false}
               activeDot={false}
+              name="股价"
             />
 
-            {/* 2. 买入点 (绿色三角形) */}
+            {/* 买入点 (绿色三角形) */}
             <Scatter 
               yAxisId="left" 
               name="买入" 
               dataKey="buyPoint" 
-              fill="#22c55e" // Green
-              shape="triangle" // 向上三角
-              legendType="triangle"
+              fill="#22c55e" 
+              shape="triangle" 
             />
 
-            {/* 3. 卖出点 (红色倒三角) */}
+            {/* 卖出点 (红色倒三角) - 使用自定义组件修复报错 */}
             <Scatter 
               yAxisId="left" 
               name="卖出" 
               dataKey="sellPoint" 
-              fill="#ef4444" // Red
-              shape="triangleDown" // 向下三角
-              legendType="triangle"
+              fill="#ef4444" 
+              shape={<TriangleDown />} 
             />
 
-            {/* 4. 持有点 (灰色小圆点) */}
+            {/* 持有点 (灰色小圆点) */}
             <Scatter 
               yAxisId="left" 
               name="持有" 
               dataKey="holdPoint" 
               fill="#d1d5db" 
               shape="circle"
-              r={2} // 半径设小一点，作为背景噪音
+              r={2} 
             />
 
           </ComposedChart>
