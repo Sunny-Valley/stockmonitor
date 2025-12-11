@@ -42,23 +42,18 @@ const TriangleUp = (props: any) => {
   );
 }
 
-// --- >>> 新增：呼吸灯标记组件 (用于高亮最新信号) <<< ---
+// --- 呼吸灯标记组件 ---
 const PulsingMarker = (props: any) => {
   const { cx, cy, fill, action } = props;
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
 
   return (
     <g>
-      {/* 1. 扩散的波纹环 (呼吸动画) */}
       <circle cx={cx} cy={cy} r="8" fill={fill} opacity="0.5">
         <animate attributeName="r" from="8" to="20" dur="1.5s" begin="0s" repeatCount="indefinite" />
         <animate attributeName="opacity" from="0.5" to="0" dur="1.5s" begin="0s" repeatCount="indefinite" />
       </circle>
-      
-      {/* 2. 实心圆点 */}
       <circle cx={cx} cy={cy} r="5" fill={fill} stroke="#fff" strokeWidth="2" />
-      
-      {/* 3. 文字标签 */}
       <text x={cx + 15} y={cy + 4} fill={fill} fontSize="12" fontWeight="bold" fontFamily="sans-serif">
         ← 最新: {action}
       </text>
@@ -163,15 +158,35 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
     setData(generateBacktestedData());
   }, [currentSymbol]);
 
+  // 计算极值和最新点
   const { maxPrice, minPrice, latestData } = useMemo(() => {
     if (data.length === 0) return { maxPrice: 0, minPrice: 0, latestData: null };
     const prices = data.map(d => d.price);
     return {
       maxPrice: Math.max(...prices),
       minPrice: Math.min(...prices),
-      latestData: data[data.length - 1] // 获取最后一个数据点
+      latestData: data[data.length - 1]
     };
   }, [data]);
+
+  // >>> 新增：计算日期分隔点 <<<
+  const dateSeparators = useMemo(() => {
+    const separators: string[] = [];
+    let lastDate = '';
+    
+    data.forEach((d) => {
+      // 提取日期部分 (YYYY-MM-DD)
+      const currentDate = d.timestamp.split('T')[0];
+      
+      // 如果日期发生变化，且不是第一个数据点，则记录该位置
+      if (lastDate && currentDate !== lastDate) {
+        separators.push(d.displayTime);
+      }
+      lastDate = currentDate;
+    });
+    return separators;
+  }, [data]);
+
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -235,6 +250,27 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               content={renderLegend}
             />
             
+            {/* >>> 新增：日期分隔线 (垂直粗虚线) <<< */}
+            {dateSeparators.map((time) => (
+              <ReferenceLine 
+                key={time} 
+                x={time} 
+                yAxisId="left"
+                stroke="#d1d5db" // 浅灰色
+                strokeWidth={2}  // 加粗
+                strokeDasharray="6 4" // 明显的虚线间距
+              >
+                {/* 可选：在分割线上方显示日期标签 */}
+                <Label 
+                  value={time.split(' ')[0]} 
+                  position="insideTopLeft" 
+                  fill="#9ca3af" 
+                  fontSize={10}
+                  offset={10} 
+                />
+              </ReferenceLine>
+            ))}
+
             {/* 最高/最低价 辅助线 */}
             <ReferenceLine yAxisId="left" y={maxPrice} stroke="#e5e7eb" strokeDasharray="3 3">
               <Label value={`High: ${maxPrice}`} position="insideTopRight" fill="#9ca3af" fontSize={10} offset={10}/>
@@ -243,7 +279,7 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               <Label value={`Low: ${minPrice}`} position="insideBottomRight" fill="#9ca3af" fontSize={10} offset={10}/>
             </ReferenceLine>
 
-            {/* >>> 新增：最新信号高亮 (呼吸灯) <<< */}
+            {/* 最新信号高亮 */}
             {latestData && (
               <ReferenceDot
                 yAxisId="left"
@@ -253,7 +289,6 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
                   <PulsingMarker 
                     {...props} 
                     action={latestData.action}
-                    // 根据动作决定颜色：买入=绿，卖出=红，持有=灰
                     fill={latestData.action === '买入' ? '#22c55e' : (latestData.action === '卖出' ? '#ef4444' : '#9ca3af')}
                   />
                 )}
@@ -272,33 +307,10 @@ const StockPredictionChart = ({ currentSymbol }: { currentSymbol: string }) => {
               name="股价"
             />
 
-            {/* 买入点 */}
-            <Scatter 
-              yAxisId="left" 
-              name="买入" 
-              dataKey="buyPoint" 
-              fill="#22c55e" 
-              shape={<TriangleUp />}
-            />
-
-            {/* 卖出点 */}
-            <Scatter 
-              yAxisId="left" 
-              name="卖出" 
-              dataKey="sellPoint" 
-              fill="#ef4444" 
-              shape={<TriangleDown />} 
-            />
-
-            {/* 持有点 */}
-            <Scatter 
-              yAxisId="left" 
-              name="持有" 
-              dataKey="holdPoint" 
-              fill="#d1d5db" 
-              shape="circle"
-              r={1.5}
-            />
+            {/* 散点标记 */}
+            <Scatter yAxisId="left" name="买入" dataKey="buyPoint" fill="#22c55e" shape={<TriangleUp />} />
+            <Scatter yAxisId="left" name="卖出" dataKey="sellPoint" fill="#ef4444" shape={<TriangleDown />} />
+            <Scatter yAxisId="left" name="持有" dataKey="holdPoint" fill="#d1d5db" shape="circle" r={1.5} />
 
           </ComposedChart>
         </ResponsiveContainer>
