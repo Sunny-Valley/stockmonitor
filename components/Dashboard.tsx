@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
 import { Trash2, Plus, Search, Zap, Activity, Info, ArrowUp, ArrowDown } from 'lucide-react';
-import { addStock, deleteStock } from '../actions';
+import { addStock, deleteStock } from '../app/actions';
 
 interface StockData {
   id: number;
